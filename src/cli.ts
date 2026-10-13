@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { formatResult } from "./format.js";
 import { PoliteFetcher } from "./http.js";
 import { DEFAULT_OPTIONS, findRoutes } from "./search.js";
-import { FlightsFromSource } from "./sources/flightsfrom.js";
+import { AeroDataBoxSource } from "./sources/aerodatabox.js";
 import { InMemorySource } from "./sources/memory.js";
 import { sampleFlights } from "./sources/sample.js";
 import type { FlightDataSource } from "./types.js";
@@ -20,7 +20,9 @@ const USAGE = `Usage:
     --arrive-after HH:mm    --arrive-before HH:mm   (destination local time)
     --min-connection MIN    default ${DEFAULT_OPTIONS.minConnectionMinutes}
     --max-layover MIN       default ${DEFAULT_OPTIONS.maxLayoverMinutes}
-    --demo                  use made-up sample schedules instead of flightsfrom.com`;
+    --demo                  use made-up sample schedules instead of AeroDataBox
+
+Real searches need AERODATABOX_API_KEY (your RapidAPI key for AeroDataBox).`;
 
 async function whitelistCommand(args: string[]): Promise<void> {
   const [action, ...rest] = args;
@@ -75,7 +77,7 @@ async function searchCommand(args: string[]): Promise<void> {
       userAgent: "zed-routes/0.1 (personal staff-travel route finder PoC)",
       minIntervalMs: 1000,
     });
-    source = new FlightsFromSource(fetcher);
+    source = new AeroDataBoxSource(fetcher, { apiKey: process.env.AERODATABOX_API_KEY ?? "" });
   }
 
   const toMinutes = (s: string | undefined, name: string) => {

@@ -3,10 +3,12 @@
 Finds one-layover standby (ZED) routings between two stations, using only the
 airlines you're allowed to fly on. See `CLAUDE.md` for the full project context.
 
-**Status:** proof of concept. The search, airline whitelist and polite fetcher
-work and are tested. The flightsfrom.com page parsers are not written yet, so
-real searches stop with a "not implemented" error. Use `--demo` to try the
-search on made-up schedules.
+**Status:** proof of concept. The search, airline whitelist and fetcher are
+tested. Real schedules come from [AeroDataBox](https://aerodatabox.com) (via
+RapidAPI): set `AERODATABOX_API_KEY`. The adapter is tested only against
+hand-written fixtures, because the API was not reachable when it was built, so
+check it against real responses first. Use `--demo` to try the search on
+made-up schedules.
 
 ```sh
 npm install

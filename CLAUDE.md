@@ -81,6 +81,17 @@ work out ZED agreements itself.
 - Every search filters both legs on it, matching the **operating** carrier.
 - If the whitelist is empty, show a prompt to set it up instead of results.
 
+## Current data source: AeroDataBox
+
+`src/sources/aerodatabox.ts` is the default source (key in `AERODATABOX_API_KEY`,
+RapidAPI). Routes come from `/airports/iata/{code}/stats/routes/daily/{date}`,
+schedules from the FIDS departures endpoint (12 h max window, so two calls per
+airport-day, cached and shared across destinations). Codeshare entries are
+dropped and the operator's own flight is kept. Fixtures are hand-written from
+the API models, not recorded; replace them with real responses. flightsfrom.com
+is blocked by a Cloudflare challenge, so its adapter stays an unimplemented stub.
+The section below is the original plan, kept for the algorithm.
+
 ## PoC data source: flightsfrom.com (hub and spoke)
 
 For the proof of concept, route and schedule data comes from
@@ -153,7 +164,8 @@ src/types.ts              Flight, RouteInfo, FlightDataSource interface
 src/search.ts             Pure pairing logic + findRoutes() hub-and-spoke orchestration
 src/timezones.ts          Station → IANA zone (small hand-kept list; PoC stopgap)
 src/http.ts               PoliteFetcher: file cache, 1 req/s queue, robots.txt
-src/sources/flightsfrom.ts  flightsfrom.com adapter (parsers not written yet)
+src/sources/aerodatabox.ts  AeroDataBox adapter (default)
+src/sources/flightsfrom.ts  flightsfrom.com adapter (stub; site blocks scripts)
 src/sources/memory.ts     In-memory source for tests and --demo
 src/sources/sample.ts     Made-up demo schedules
 src/whitelist.ts          Airline whitelist, saved to ~/.zed-routes/settings.json (ZED_SETTINGS overrides)
