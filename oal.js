@@ -309,9 +309,9 @@ var OAL_DATA = {
       comments_fr: 0
     },
   },
-  _77: {
+  _YB: {
     oalName: "Harbour Air Seaplane",
-    iata: "77",
+    iata: "YB",
     zedY: {
       employee: "ZL",
       retiree: "ZL",
@@ -449,9 +449,9 @@ var OAL_DATA = {
       comments_fr: 0
     },
   },
-  _02: {
+  VJT: {
     oalName: "Vistajet",
-    iata: "02",
+    iata: "VJT",
     zedY: {
       employee: "ZL",
       retiree: "ZL",
