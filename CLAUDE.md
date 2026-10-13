@@ -133,13 +133,42 @@ credentials and their terms forbid automated access.
 
 ## Open questions (decide before building much)
 
-- Tech stack and platform (web app, mobile, or both).
+- UI platform (web app, mobile, or both). The PoC is a TypeScript CLI.
 - Exactly which flightsfrom.com page holds the dated flight times for a
-  route, and how it's structured (not checked yet).
+  route, and how it's structured (not checked yet; the parsers in
+  `src/sources/flightsfrom.ts` are stubs until real pages are saved as fixtures).
+- Do flightsfrom.com route lists show operating or marketing carriers? The
+  route-level whitelist filter assumes operating.
 - Long-term schedule data provider: cost, coverage and rate limits.
 - Should **direct flights** appear alongside the 1-layover routes?
 - Will 2-layover routes be needed later? (Design the search so the number of hops can be raised.)
 - Are standby load or seat availability indicators needed, and is there a legitimate source for them?
+
+## Stack and layout
+
+TypeScript on Node 20+ (ESM), `luxon` for time zones, `vitest` for tests, `tsx` to run.
+
+```
+src/types.ts              Flight, RouteInfo, FlightDataSource interface
+src/search.ts             Pure pairing logic + findRoutes() hub-and-spoke orchestration
+src/timezones.ts          Station → IANA zone (small hand-kept list; PoC stopgap)
+src/http.ts               PoliteFetcher: file cache, 1 req/s queue, robots.txt
+src/sources/flightsfrom.ts  flightsfrom.com adapter (parsers not written yet)
+src/sources/memory.ts     In-memory source for tests and --demo
+src/sources/sample.ts     Made-up demo schedules
+src/whitelist.ts          Airline whitelist, saved to ~/.zed-routes/settings.json (ZED_SETTINGS overrides)
+src/cli.ts, src/format.ts CLI
+test/                     vitest tests
+```
+
+Commands:
+
+- `npm test`, `npm run typecheck`
+- `npm run zed -- whitelist set AC,LH,UA`
+- `npm run zed -- search --from LHR --to YVR --date 2026-11-02 [--demo]`
+
+In a cloud session behind the egress proxy, Node's `fetch` needs
+`NODE_USE_ENV_PROXY=1` to use `HTTPS_PROXY`.
 
 ## Conventions
 
