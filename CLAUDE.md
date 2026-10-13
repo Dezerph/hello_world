@@ -55,9 +55,9 @@ getting on board.
 
 - A route is exactly `origin → X → destination`, where `X` is neither the
   origin nor the destination.
-- Both segments must be on **operating carriers the user can travel on**: their
-  home carrier, or a carrier with a ZED agreement with the home carrier. The two
-  segments do **not** have to be on the same airline.
+- Both segments must be on an **operating carrier in the user's airline
+  whitelist** (see below). The two segments do **not** have to be on the same
+  airline. Any whitelisted carrier can be paired with any other.
 - Leg 2 must depart at least `MCT + buffer` after leg 1 arrives at `X`.
   Defaults are open to change; until decided, use ~90 min for an international
   self-transfer and cap layovers at ~12 h.
@@ -68,13 +68,64 @@ getting on board.
   but flagged.
 - Sort by total journey time by default.
 
+## Airline whitelist
+
+The user keeps a list of the airlines they can fly on: their home carrier plus
+every carrier their airline has a ZED agreement with. The app does not try to
+work out ZED agreements itself.
+
+- Store airlines by their 2-letter IATA code (e.g. `AC`, `LH`) and show the
+  airline names in the UI.
+- The whitelist is a **user setting**, saved between searches. It is not entered
+  on each search.
+- Every search filters both legs on it, matching the **operating** carrier.
+- If the whitelist is empty, show a prompt to set it up instead of results.
+
+## PoC data source: flightsfrom.com (hub and spoke)
+
+For the proof of concept, route and schedule data comes from
+[flightsfrom.com](https://www.flightsfrom.com). Its page
+`https://www.flightsfrom.com/{IATA}/destinations` lists every station served
+non-stop from `{IATA}` (the station's "spokes") and the airlines flying each route.
+
+Search algorithm:
+
+1. Fetch the spokes of the **origin** (`/ORIG/destinations`). Keep only routes
+   flown by a whitelisted airline.
+2. Fetch the spokes of the **destination** (`/DEST/destinations`), filtered the
+   same way.
+3. **Candidate connections** = the stations in both spoke sets, minus origin and destination.
+4. **Verify the direction of leg 2.** Step 2 lists flights *out of* DEST, but we
+   need flights *into* DEST. Most routes run both ways, but some don't (e.g.
+   triangle routings). For each candidate `X`, confirm on `/X/destinations` that
+   a whitelisted airline flies `X → DEST`.
+5. For each surviving `X`, fetch the dated schedules for `ORIG → X` and
+   `X → DEST`. Then pair flights using the connection rules above.
+
+Fetch rules:
+
+- **Cache aggressively.** Route lists change slowly, so cache destination pages
+  for at least 24 h. Schedules can be cached for a few hours.
+- Throttle requests (about 1 per second, never in parallel against the site),
+  send an honest User-Agent, and respect `robots.txt`.
+- Check the site's terms of use before relying on it beyond personal PoC use.
+- The page layout can change without notice. Keep all parsing code in one adapter
+  module and back it with saved HTML fixtures in tests.
+
+Keep the data source behind an interface so a licensed schedule API can replace it:
+
+```
+get_routes_from(station) -> [(dest_station, [carrier_codes])]
+get_flights(origin, dest, date) -> [Flight(carrier, flight_no, dep_local, arr_local, operating_carrier)]
+```
+
 ## Data the app needs
 
 | Data | Purpose | Notes |
 |---|---|---|
 | Airports | Station picker, time zones | Open datasets exist (e.g. OurAirports + IANA tz) |
-| Flight schedules | Building the segments | Source **not decided yet**. Candidates: a schedules API (OAG, Cirium, Aviationstack, AeroDataBox, etc.), or a manually maintained dataset |
-| ZED agreements | Filtering by carrier eligibility | Depends on the user's home carrier. Likely a user-editable list of eligible carriers at first, since agreement data is not public |
+| Routes and flight schedules | Building the segments | PoC: flightsfrom.com (see above). Later: maybe a licensed schedules API (OAG, Cirium, AeroDataBox, etc.) |
+| Airline whitelist | Filtering by carrier eligibility | Entered by the user (see above) |
 | MCT per airport | Connection validity | Use a configurable default to start |
 
 Do not scrape airline or staff-travel portals. They usually require staff
@@ -83,8 +134,9 @@ credentials and their terms forbid automated access.
 ## Open questions (decide before building much)
 
 - Tech stack and platform (web app, mobile, or both).
-- Schedule data provider: cost, coverage and rate limits.
-- How the user sets their home carrier and eligible ZED carriers.
+- Exactly which flightsfrom.com page holds the dated flight times for a
+  route, and how it's structured (not checked yet).
+- Long-term schedule data provider: cost, coverage and rate limits.
 - Should **direct flights** appear alongside the 1-layover routes?
 - Will 2-layover routes be needed later? (Design the search so the number of hops can be raised.)
 - Are standby load or seat availability indicators needed, and is there a legitimate source for them?
