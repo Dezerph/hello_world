@@ -12,6 +12,13 @@ export interface FetcherOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+export interface GetOptions {
+  /** Extra request headers (e.g. an API key). Not part of the cache key, so never put secrets in the URL. */
+  headers?: Record<string, string>;
+  /** Set false for documented JSON APIs, where robots.txt does not apply. Default true. */
+  checkRobots?: boolean;
+}
+
 export class RobotsDisallowedError extends Error {
   constructor(public readonly url: string) {
     super(`robots.txt disallows fetching ${url}`);
@@ -49,14 +56,16 @@ export class PoliteFetcher {
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
-  async get(url: string, ttlMs: number): Promise<string> {
+  async get(url: string, ttlMs: number, options: GetOptions = {}): Promise<string> {
     const cached = await this.readCache(url);
     if (cached && this.now() - cached.fetchedAt < ttlMs) return cached.body;
 
-    const robots = await this.getRobots(new URL(url).origin);
-    if (!isAllowed(robots, new URL(url), this.opts.userAgent)) throw new RobotsDisallowedError(url);
+    if (options.checkRobots ?? true) {
+      const robots = await this.getRobots(new URL(url).origin);
+      if (!isAllowed(robots, new URL(url), this.opts.userAgent)) throw new RobotsDisallowedError(url);
+    }
 
-    const res = await this.throttled(url);
+    const res = await this.throttled(url, options.headers);
     if (!res.ok) throw new HttpError(url, res.status);
     const body = await res.text();
     await this.writeCache({ url, fetchedAt: this.now(), body });
@@ -77,13 +86,13 @@ export class PoliteFetcher {
   }
 
   /** Serialises network requests and spaces them `minIntervalMs` apart. */
-  private throttled(url: string): Promise<Response> {
+  private throttled(url: string, headers: Record<string, string> = {}): Promise<Response> {
     const run = async () => {
       const wait = this.lastRequestAt + this.opts.minIntervalMs - this.now();
       if (wait > 0) await this.sleep(wait);
       this.lastRequestAt = this.now();
       try {
-        return await this.fetchImpl(url, { headers: { "User-Agent": this.opts.userAgent } });
+        return await this.fetchImpl(url, { headers: { ...headers, "User-Agent": this.opts.userAgent } });
       } catch (e) {
         const cause = e instanceof Error && e.cause instanceof Error ? e.cause.message : String(e);
         throw new Error(`Could not reach ${url}: ${cause}`, { cause: e });

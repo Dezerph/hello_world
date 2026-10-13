@@ -1,0 +1,23 @@
+{
+  "departures": [
+    { "number": "BA 85", "codeshareStatus": "IsOperator", "isCargo": false,
+      "airline": { "name": "British Airways", "iata": "BA" },
+      "movement": { "airport": { "iata": "LHR" }, "scheduledTime": { "utc": "2026-11-02 09:45Z", "local": "2026-11-02 09:45+00:00" } },
+      "arrival": { "airport": { "iata": "YVR" }, "scheduledTime": { "utc": "2026-11-02 21:10Z", "local": "2026-11-02 13:10-08:00" } } },
+    { "number": "AA 6085", "codeshareStatus": "IsCodeshared", "isCargo": false,
+      "airline": { "name": "American Airlines", "iata": "AA" },
+      "movement": { "airport": { "iata": "LHR" }, "scheduledTime": { "local": "2026-11-02 09:45+00:00" } },
+      "arrival": { "airport": { "iata": "YVR" }, "scheduledTime": { "local": "2026-11-02 13:10-08:00" } } },
+    { "number": "FI 450", "codeshareStatus": "IsOperator", "isCargo": false,
+      "airline": { "name": "Icelandair", "iata": "FI" },
+      "movement": { "airport": { "iata": "LHR" }, "scheduledTime": { "local": "2026-11-02 23:55+00:00" } },
+      "arrival": { "airport": { "iata": "KEF" }, "scheduledTime": { "local": "2026-11-03 02:05+00:00" } } },
+    { "number": "5X 100", "codeshareStatus": "IsOperator", "isCargo": true,
+      "airline": { "name": "UPS", "iata": "5X" },
+      "movement": { "airport": { "iata": "LHR" }, "scheduledTime": { "local": "2026-11-02 10:00+00:00" } },
+      "arrival": { "airport": { "iata": "YVR" }, "scheduledTime": { "local": "2026-11-02 13:00-08:00" } } },
+    { "number": "BA 999", "codeshareStatus": "IsOperator", "isCargo": false,
+      "airline": { "name": "British Airways", "iata": "BA" },
+      "movement": { "airport": { "iata": "LHR" } } }
+  ]
+}

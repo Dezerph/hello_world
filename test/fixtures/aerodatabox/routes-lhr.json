@@ -1,0 +1,9 @@
+{
+  "routes": [
+    { "destination": { "iata": "YVR", "name": "Vancouver" }, "averageDailyFlights": 4.0,
+      "operators": [ { "name": "British Airways", "iata": "BA" }, { "name": "Air Canada", "iata": "AC" } ] },
+    { "destination": { "iata": "KEF", "name": "Reykjavik" }, "averageDailyFlights": 3.0,
+      "operators": [ { "name": "Icelandair", "iata": "FI" } ] },
+    { "destination": { "name": "No code" }, "averageDailyFlights": 1.0, "operators": [] }
+  ]
+}

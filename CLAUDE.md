@@ -68,18 +68,45 @@ getting on board.
   but flagged.
 - Sort by total journey time by default.
 
-## Airline whitelist
+## Airline whitelist: the OAL file
 
-The user keeps a list of the airlines they can fly on: their home carrier plus
-every carrier their airline has a ZED agreement with. The app does not try to
-work out ZED agreements itself.
+The user works for **Air Canada**. The airlines they can fly are AC itself (plus
+its regionals Jazz `QK` and Rouge `RV`, on staff travel) and every carrier in
+`oal.js`, AC's list of ZED ("other airline", OAL) agreements. The app does not
+try to work out ZED agreements itself.
 
-- Store airlines by their 2-letter IATA code (e.g. `AC`, `LH`) and show the
-  airline names in the UI.
-- The whitelist is a **user setting**, saved between searches. It is not entered
-  on each search.
+- `oal.js` is a JavaScript object literal (`var OAL_DATA = { _LH: {...} }`). Each
+  airline has `iata`, `oalName`, `zedY` / `zedJ` (economy / business) with a fare
+  level per traveller type (`employee`, `retiree`, `spouse`, `children`,
+  `parent`, `partner`; `0` = that type is not allowed; `zedJ` has no `retiree`),
+  and `other.otherAirlines`, a note naming regionals that fly for it, e.g.
+  "United Express: Mesa(YV), SkyWest(OO)".
+- `src/oal.ts` parses it **as data with JSON5, never by running it**, because
+  users import files from other people. Codes in brackets in `otherAirlines` are
+  allowed too, at the parent's fares; codes known to be wrong there (JL's "OD",
+  AA's "OW") are dropped. Airlines with only an ICAO code (ECA, VJT) are kept but
+  can't match flights.
+- Search eligibility = home airlines (any traveller type, any cabin) + OAL
+  airlines whose fare for the chosen traveller type is non-zero. Default:
+  `employee`, economy only. `--business` also counts `zedJ`.
 - Every search filters both legs on it, matching the **operating** carrier.
-- If the whitelist is empty, show a prompt to set it up instead of results.
+  Results show each leg's fare level (`ZL`, `Y ZL / J ZM`, `ZL via UA`, `staff travel`).
+- Profiles (`src/profiles.ts`): the built-in `ac` profile reads the repo's
+  `oal.js`. Other users import their own OAL file under a name, with their home
+  airline; it is saved as parsed JSON in `~/.zed-routes/oal/NAME.json` and the
+  active profile in `~/.zed-routes/settings.json` (`ZED_SETTINGS` overrides).
+- If no airline is eligible, show a prompt instead of results.
+
+## Current data source: AeroDataBox
+
+`src/sources/aerodatabox.ts` is the default source (key in `AERODATABOX_API_KEY`,
+RapidAPI). Routes come from `/airports/iata/{code}/stats/routes/daily/{date}`,
+schedules from the FIDS departures endpoint (12 h max window, so two calls per
+airport-day, cached and shared across destinations). Codeshare entries are
+dropped and the operator's own flight is kept. Fixtures are hand-written from
+the API models, not recorded; replace them with real responses. flightsfrom.com
+is blocked by a Cloudflare challenge, so its adapter stays an unimplemented stub.
+The section below is the original plan, kept for the algorithm.
 
 ## PoC data source: flightsfrom.com (hub and spoke)
 
@@ -125,7 +152,7 @@ get_flights(origin, dest, date) -> [Flight(carrier, flight_no, dep_local, arr_lo
 |---|---|---|
 | Airports | Station picker, time zones | Open datasets exist (e.g. OurAirports + IANA tz) |
 | Routes and flight schedules | Building the segments | PoC: flightsfrom.com (see above). Later: maybe a licensed schedules API (OAG, Cirium, AeroDataBox, etc.) |
-| Airline whitelist | Filtering by carrier eligibility | Entered by the user (see above) |
+| Airline whitelist | Filtering by carrier eligibility | `oal.js` for AC; other users import their own OAL file (see above) |
 | MCT per airport | Connection validity | Use a configurable default to start |
 
 Do not scrape airline or staff-travel portals. They usually require staff
@@ -153,10 +180,13 @@ src/types.ts              Flight, RouteInfo, FlightDataSource interface
 src/search.ts             Pure pairing logic + findRoutes() hub-and-spoke orchestration
 src/timezones.ts          Station → IANA zone (small hand-kept list; PoC stopgap)
 src/http.ts               PoliteFetcher: file cache, 1 req/s queue, robots.txt
-src/sources/flightsfrom.ts  flightsfrom.com adapter (parsers not written yet)
+src/sources/aerodatabox.ts  AeroDataBox adapter (default)
+src/sources/flightsfrom.ts  flightsfrom.com adapter (stub; site blocks scripts)
 src/sources/memory.ts     In-memory source for tests and --demo
 src/sources/sample.ts     Made-up demo schedules
-src/whitelist.ts          Airline whitelist, saved to ~/.zed-routes/settings.json (ZED_SETTINGS overrides)
+src/oal.ts                OAL file parser + eligibility by traveller type and cabin (pure)
+src/profiles.ts           Built-in AC profile and imported OAL profiles, saved under ~/.zed-routes
+oal.js                    Air Canada's OAL (ZED agreement) list
 src/cli.ts, src/format.ts CLI
 test/                     vitest tests
 ```
@@ -164,8 +194,9 @@ test/                     vitest tests
 Commands:
 
 - `npm test`, `npm run typecheck`
-- `npm run zed -- whitelist set AC,LH,UA`
-- `npm run zed -- search --from LHR --to YVR --date 2026-11-02 [--demo]`
+- `npm run zed -- oal [--traveller spouse] [--business]` (show who you can fly)
+- `npm run zed -- oal import their-oal.js --name jane --home WS`, `oal use jane`, `oal list`
+- `npm run zed -- search --from LHR --to YVR --date 2026-11-02 [--traveller TYPE] [--business] [--demo]`
 
 In a cloud session behind the egress proxy, Node's `fetch` needs
 `NODE_USE_ENV_PROXY=1` to use `HTTPS_PROXY`.
