@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { zoneFor as defaultZoneFor, UnknownStationError, type ZoneLookup } from "./timezones.js";
+import { zoneFor as defaultZoneFor, UnknownStationError, type ZoneLookup } from "./stations.js";
 import type { CarrierCode, Flight, FlightDataSource, Iata, RouteInfo } from "./types.js";
 
 export interface SearchRequest {
@@ -92,20 +92,23 @@ function servedStations(routes: RouteInfo[], whitelist: Set<CarrierCode>): Set<I
   return new Set(
     routes
       .filter((r) => r.carriers.some((c) => whitelist.has(c.toUpperCase())))
-      .map((r) => r.destination.toUpperCase()),
+      .map((r) => r.station.toUpperCase()),
   );
 }
 
-/** Stations reachable non-stop from both ends on a whitelisted airline. */
+/**
+ * Stations served non-stop from both ends on a whitelisted airline.
+ * `destinationSpokes` are the destination's routes, outbound or inbound.
+ */
 export function candidateHubs(
   fromOrigin: RouteInfo[],
-  fromDestination: RouteInfo[],
+  destinationSpokes: RouteInfo[],
   whitelist: Set<CarrierCode>,
   origin: Iata,
   destination: Iata,
 ): Iata[] {
   const a = servedStations(fromOrigin, whitelist);
-  const b = servedStations(fromDestination, whitelist);
+  const b = servedStations(destinationSpokes, whitelist);
   return [...a].filter((x) => b.has(x) && x !== origin && x !== destination).sort();
 }
 
@@ -212,6 +215,8 @@ export function leg2Dates(leg1s: Flight[], options: Partial<SearchOptions> = {})
 /**
  * Hub-and-spoke search, as described in CLAUDE.md:
  * spokes(origin) ∩ spokes(destination) → verify hub → destination → pair dated flights.
+ * If the source can list routes *into* the destination, those are used as its
+ * spokes and the per-hub direction check is not needed.
  * Calls the source sequentially; the source is responsible for throttling and caching.
  */
 export async function findRoutes(
@@ -232,8 +237,11 @@ export async function findRoutes(
   opts.zoneFor(req.destination);
 
   const fromOrigin = await source.getRoutesFrom(req.origin);
-  const fromDestination = await source.getRoutesFrom(req.destination);
-  const hubs = candidateHubs(fromOrigin, fromDestination, wl, req.origin, req.destination);
+  const inbound = source.getRoutesTo !== undefined;
+  const destinationSpokes = source.getRoutesTo
+    ? await source.getRoutesTo(req.destination)
+    : await source.getRoutesFrom(req.destination);
+  const hubs = candidateHubs(fromOrigin, destinationSpokes, wl, req.origin, req.destination);
 
   const itineraries: Itinerary[] = [];
   const hubsSkipped: SkippedHub[] = [];
@@ -248,7 +256,7 @@ export async function findRoutes(
     }
 
     // Step 4: the destination's spokes are flights *out of* it; confirm hub → destination exists.
-    if (!servesWith(await source.getRoutesFrom(hub), req.destination, wl)) {
+    if (!inbound && !servesWith(await source.getRoutesFrom(hub), req.destination, wl)) {
       hubsSkipped.push({ hub, reason: `no ${hub}→${req.destination} route on a whitelisted airline` });
       continue;
     }

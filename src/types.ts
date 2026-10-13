@@ -3,9 +3,10 @@ export type Iata = string;
 /** 2-letter IATA airline code, e.g. "AC". */
 export type CarrierCode = string;
 
-/** A non-stop route out of a station and the airlines that fly it. */
+/** A non-stop route between a station and `station`, and the airlines that fly it. */
 export interface RouteInfo {
-  destination: Iata;
+  /** The other end of the route: its destination for getRoutesFrom, its origin for getRoutesTo. */
+  station: Iata;
   carriers: CarrierCode[];
 }
 
@@ -23,9 +24,15 @@ export interface Flight {
   arrivalLocal: string;
 }
 
-/** Where routes and schedules come from. flightsfrom.com for the PoC; swappable later. */
+/** Where routes and schedules come from. OpenSky for the PoC; swappable later. */
 export interface FlightDataSource {
+  /** Non-stop routes out of `station`. */
   getRoutesFrom(station: Iata): Promise<RouteInfo[]>;
+  /**
+   * Non-stop routes into `station`. Optional: when present the search uses it for
+   * the destination's spokes and skips checking each hub's routes separately.
+   */
+  getRoutesTo?(station: Iata): Promise<RouteInfo[]>;
   /** Flights departing `origin` for `destination` on `date` (YYYY-MM-DD, origin local). */
   getFlights(origin: Iata, destination: Iata, date: string): Promise<Flight[]>;
 }

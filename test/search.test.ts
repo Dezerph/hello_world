@@ -109,16 +109,16 @@ describe("candidateHubs", () => {
   it("intersects the whitelisted spokes of both ends", () => {
     const wl = new Set(["AC", "UA"]);
     const fromO = [
-      { destination: "YYZ", carriers: ["AC"] },
-      { destination: "ORD", carriers: ["UA"] },
-      { destination: "SEA", carriers: ["BA"] },
-      { destination: "YVR", carriers: ["AC"] },
+      { station: "YYZ", carriers: ["AC"] },
+      { station: "ORD", carriers: ["UA"] },
+      { station: "SEA", carriers: ["BA"] },
+      { station: "YVR", carriers: ["AC"] },
     ];
     const fromD = [
-      { destination: "YYZ", carriers: ["AC"] },
-      { destination: "ORD", carriers: ["UA"] },
-      { destination: "SEA", carriers: ["AS"] },
-      { destination: "LHR", carriers: ["AC"] },
+      { station: "YYZ", carriers: ["AC"] },
+      { station: "ORD", carriers: ["UA"] },
+      { station: "SEA", carriers: ["AS"] },
+      { station: "LHR", carriers: ["AC"] },
     ];
     expect(candidateHubs(fromO, fromD, wl, "LHR", "YVR")).toEqual(["ORD", "YYZ"]);
   });
