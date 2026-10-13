@@ -15,7 +15,7 @@ export class InMemorySource implements FlightDataSource {
       set.add(f.operatingCarrier);
       byDest.set(f.destination, set);
     }
-    return [...byDest].map(([destination, carriers]) => ({ destination, carriers: [...carriers] }));
+    return [...byDest].map(([station, carriers]) => ({ station, carriers: [...carriers] }));
   }
 
   async getFlights(origin: Iata, destination: Iata, date: string): Promise<Flight[]> {

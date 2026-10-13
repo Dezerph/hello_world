@@ -81,41 +81,66 @@ work out ZED agreements itself.
 - Every search filters both legs on it, matching the **operating** carrier.
 - If the whitelist is empty, show a prompt to set it up instead of results.
 
-## PoC data source: flightsfrom.com (hub and spoke)
+## PoC data source: OpenSky Network (hub and spoke)
 
-For the proof of concept, route and schedule data comes from
-[flightsfrom.com](https://www.flightsfrom.com). Its page
-`https://www.flightsfrom.com/{IATA}/destinations` lists every station served
-non-stop from `{IATA}` (the station's "spokes") and the airlines flying each route.
+For the proof of concept, route and flight data comes from the
+[OpenSky Network REST API](https://openskynetwork.github.io/opensky-api/rest.html)
+(`/flights/departure` and `/flights/arrival` by airport). It replaced scraping
+flightsfrom.com. OpenSky records flights its ADS-B receivers **actually saw**. It
+has **no future schedules**, and that shapes everything below.
 
 Search algorithm:
 
-1. Fetch the spokes of the **origin** (`/ORIG/destinations`). Keep only routes
-   flown by a whitelisted airline.
-2. Fetch the spokes of the **destination** (`/DEST/destinations`), filtered the
-   same way.
-3. **Candidate connections** = the stations in both spoke sets, minus origin and destination.
-4. **Verify the direction of leg 2.** Step 2 lists flights *out of* DEST, but we
-   need flights *into* DEST. Most routes run both ways, but some don't (e.g.
-   triangle routings). For each candidate `X`, confirm on `/X/destinations` that
-   a whitelisted airline flies `X → DEST`.
-5. For each surviving `X`, fetch the dated schedules for `ORIG → X` and
-   `X → DEST`. Then pair flights using the connection rules above.
+1. **Origin spokes:** departures from ORIG over the last 7 days with data,
+   keeping routes flown by a whitelisted airline.
+2. **Destination spokes:** arrivals **into** DEST over the same 7 days, filtered
+   the same way. These are real inbound routes, so the old "verify the direction
+   of leg 2" step (one lookup per hub) is not needed. `findRoutes` still does that
+   check for sources without `getRoutesTo`.
+3. **Candidate connections** = stations in both sets, minus origin and destination.
+4. **Flights for the date are projected.** Take the flights seen on the same
+   weekday in the most recent week with data, and move them forward by whole weeks
+   on the local wall clock (so DST changes are handled). Leg 1 is read from ORIG's
+   departures and leg 2 from DEST's arrivals, so one set of requests serves every hub.
+   Then pair flights using the connection rules above.
+
+What the data means (show these caveats to the user):
+
+- Times are when the aircraft was first and last seen: roughly take-off and
+  landing, not published gate times. They include that day's delays.
+- Schedule changes are missed until they have been flown: the IATA season switch
+  at the end of October and in late March, new routes, cancellations.
+- A diverted flight looks like a real route on the day it happened.
+- Flight numbers come from ATC callsigns (`BAW117` → `BA117`). Alphanumeric
+  callsigns (`BAW12K`) are shown as is.
+- Callsigns are filed by the **operating** airline, which is what the whitelist
+  needs. Regional partners fly under their own codes (Jazz = `QK` for Air
+  Canada Express), so they must be whitelisted separately.
+- Coverage is thin over oceans and in parts of Africa and Asia; airports there
+  may be missing (`estArrivalAirport: null`).
+- OpenSky uses ICAO codes. `src/stations.ts` maps them to IATA using generated
+  tables in `src/data/` (see its README for sources and licences).
 
 Fetch rules:
 
-- **Cache aggressively.** Route lists change slowly, so cache destination pages
-  for at least 24 h. Schedules can be cached for a few hours.
-- Throttle requests (about 1 per second, never in parallel against the site),
-  send an honest User-Agent, and respect `robots.txt`.
-- Check the site's terms of use before relying on it beyond personal PoC use.
-- The page layout can change without notice. Keep all parsing code in one adapter
-  module and back it with saved HTML fixtures in tests.
+- One UTC day per request (`begin`/`end` = that day), so every URL is stable and
+  cacheable. Finished days are cached for 30 days; days that ended in the last
+  48 h for 6 h, because OpenSky fills days in with a nightly batch. A day is
+  only used 6 h after it ends.
+- OpenSky answers 404 for "no flights"; treat it as an empty list.
+- Requests are throttled to about 1 per second, one at a time. Accounts have a
+  daily credit budget, and HTTP 429 means it's used up.
+- Auth: OAuth2 client credentials. Set `OPENSKY_CLIENT_ID` and
+  `OPENSKY_CLIENT_SECRET` (API client from the OpenSky account page). Without
+  them requests are anonymous and may be refused.
+- Licence: OpenSky data is for research and non-commercial use. Anything beyond
+  a personal PoC needs an agreement with OpenSky or a licensed schedule provider.
 
 Keep the data source behind an interface so a licensed schedule API can replace it:
 
 ```
-get_routes_from(station) -> [(dest_station, [carrier_codes])]
+get_routes_from(station) -> [(station, [carrier_codes])]
+get_routes_to(station)   -> [(station, [carrier_codes])]   (optional)
 get_flights(origin, dest, date) -> [Flight(carrier, flight_no, dep_local, arr_local, operating_carrier)]
 ```
 
@@ -123,8 +148,9 @@ get_flights(origin, dest, date) -> [Flight(carrier, flight_no, dep_local, arr_lo
 
 | Data | Purpose | Notes |
 |---|---|---|
-| Airports | Station picker, time zones | Open datasets exist (e.g. OurAirports + IANA tz) |
-| Routes and flight schedules | Building the segments | PoC: flightsfrom.com (see above). Later: maybe a licensed schedules API (OAG, Cirium, AeroDataBox, etc.) |
+| Airports | Station picker, time zones, IATA↔ICAO | `src/data/airports.json`, generated from mwgg/Airports |
+| Airline codes | Callsign (ICAO) → IATA airline | `src/data/airlines.json`, generated from OpenFlights plus overrides |
+| Routes and flights | Building the segments | PoC: OpenSky observed flights (see above). Later: a licensed schedules API (AeroDataBox, OAG, Cirium, etc.) for real future schedules |
 | Airline whitelist | Filtering by carrier eligibility | Entered by the user (see above) |
 | MCT per airport | Connection validity | Use a configurable default to start |
 
@@ -134,12 +160,11 @@ credentials and their terms forbid automated access.
 ## Open questions (decide before building much)
 
 - UI platform (web app, mobile, or both). The PoC is a TypeScript CLI.
-- Exactly which flightsfrom.com page holds the dated flight times for a
-  route, and how it's structured (not checked yet; the parsers in
-  `src/sources/flightsfrom.ts` are stubs until real pages are saved as fixtures).
-- Do flightsfrom.com route lists show operating or marketing carriers? The
-  route-level whitelist filter assumes operating.
-- Long-term schedule data provider: cost, coverage and rate limits.
+- The OpenSky adapter is built from the API docs and has not yet been run
+  against the live API (the build environment couldn't reach it). Save real
+  responses as fixtures under `test/fixtures/opensky/` once it has.
+- Long-term schedule data provider for real future schedules (AeroDataBox is
+  the likely candidate): cost, coverage and rate limits.
 - Should **direct flights** appear alongside the 1-layover routes?
 - Will 2-layover routes be needed later? (Design the search so the number of hops can be raised.)
 - Are standby load or seat availability indicators needed, and is there a legitimate source for them?
@@ -151,14 +176,16 @@ TypeScript on Node 20+ (ESM), `luxon` for time zones, `vitest` for tests, `tsx` 
 ```
 src/types.ts              Flight, RouteInfo, FlightDataSource interface
 src/search.ts             Pure pairing logic + findRoutes() hub-and-spoke orchestration
-src/timezones.ts          Station → IANA zone (small hand-kept list; PoC stopgap)
-src/http.ts               PoliteFetcher: file cache, 1 req/s queue, robots.txt
-src/sources/flightsfrom.ts  flightsfrom.com adapter (parsers not written yet)
+src/stations.ts           IATA ↔ ICAO for airports and airlines, station → IANA zone
+src/data/                 Generated code tables (npm run build-codes; see its README)
+src/http.ts               PoliteFetcher: file cache, 1 req/s queue, robots.txt, auth headers
+src/sources/opensky.ts    OpenSky adapter: routes, projected flights, OAuth2
 src/sources/memory.ts     In-memory source for tests and --demo
 src/sources/sample.ts     Made-up demo schedules
 src/whitelist.ts          Airline whitelist, saved to ~/.zed-routes/settings.json (ZED_SETTINGS overrides)
 src/cli.ts, src/format.ts CLI
-test/                     vitest tests
+scripts/build-codes.ts    Regenerates src/data/ from open datasets
+test/                     vitest tests (OpenSky fixtures in test/fixtures/opensky/)
 ```
 
 Commands:
@@ -166,6 +193,8 @@ Commands:
 - `npm test`, `npm run typecheck`
 - `npm run zed -- whitelist set AC,LH,UA`
 - `npm run zed -- search --from LHR --to YVR --date 2026-11-02 [--demo]`
+  (needs `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` unless `--demo`)
+- `NODE_USE_ENV_PROXY=1 npm run build-codes` to refresh the code tables
 
 In a cloud session behind the egress proxy, Node's `fetch` needs
 `NODE_USE_ENV_PROXY=1` to use `HTTPS_PROXY`.

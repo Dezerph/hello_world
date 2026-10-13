@@ -3,9 +3,10 @@ import { parseArgs } from "node:util";
 import { formatResult } from "./format.js";
 import { PoliteFetcher } from "./http.js";
 import { DEFAULT_OPTIONS, findRoutes } from "./search.js";
-import { FlightsFromSource } from "./sources/flightsfrom.js";
 import { InMemorySource } from "./sources/memory.js";
+import { OpenSkySource } from "./sources/opensky.js";
 import { sampleFlights } from "./sources/sample.js";
+import { hasAirlineDesignator } from "./stations.js";
 import type { FlightDataSource } from "./types.js";
 import { loadWhitelist, parseCarrierCodes, saveWhitelist, settingsPath } from "./whitelist.js";
 
@@ -20,7 +21,10 @@ const USAGE = `Usage:
     --arrive-after HH:mm    --arrive-before HH:mm   (destination local time)
     --min-connection MIN    default ${DEFAULT_OPTIONS.minConnectionMinutes}
     --max-layover MIN       default ${DEFAULT_OPTIONS.maxLayoverMinutes}
-    --demo                  use made-up sample schedules instead of flightsfrom.com`;
+    --demo                  use made-up sample schedules instead of OpenSky
+
+  Real searches use the OpenSky Network API. Set OPENSKY_CLIENT_ID and
+  OPENSKY_CLIENT_SECRET to an API client from your OpenSky account.`;
 
 async function whitelistCommand(args: string[]): Promise<void> {
   const [action, ...rest] = args;
@@ -74,8 +78,20 @@ async function searchCommand(args: string[]): Promise<void> {
       cacheDir: join(process.cwd(), ".cache", "http"),
       userAgent: "zed-routes/0.1 (personal staff-travel route finder PoC)",
       minIntervalMs: 1000,
+      // A documented API we sign in to, not pages we crawl.
+      respectRobots: false,
     });
-    source = new FlightsFromSource(fetcher);
+    const { OPENSKY_CLIENT_ID: clientId, OPENSKY_CLIENT_SECRET: clientSecret } = process.env;
+    if (!clientId || !clientSecret) console.log("OPENSKY_CLIENT_ID / OPENSKY_CLIENT_SECRET not set; trying OpenSky anonymously.\n");
+    source = new OpenSkySource(fetcher, { credentials: clientId && clientSecret ? { clientId, clientSecret } : undefined });
+    console.log(
+      "Times are estimates: flights OpenSky saw on the same weekday in a recent week, moved to your date.\n" +
+        "They are roughly take-off and landing times, not a published schedule.\n",
+    );
+    const unmapped = whitelist.filter((c) => !hasAirlineDesignator(c));
+    if (unmapped.length) {
+      console.log(`No ICAO code known for ${unmapped.join(", ")}, so their flights can't be found. Add them in scripts/build-codes.ts.\n`);
+    }
   }
 
   const toMinutes = (s: string | undefined, name: string) => {

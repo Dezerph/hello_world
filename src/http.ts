@@ -7,9 +7,18 @@ export interface FetcherOptions {
   userAgent: string;
   /** Minimum gap between network requests, across all URLs. */
   minIntervalMs: number;
+  /** Check robots.txt before fetching (default true). Turn off only for documented APIs. */
+  respectRobots?: boolean;
   fetchImpl?: typeof fetch;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+}
+
+export interface GetOptions {
+  /** Extra request headers, e.g. auth. Only called when a network request is made. */
+  headers?: () => Promise<Record<string, string>>;
+  /** Treat HTTP 404 as success with this body (and cache it). For APIs that 404 on "no results". */
+  notFoundBody?: string;
 }
 
 export class RobotsDisallowedError extends Error {
@@ -49,16 +58,20 @@ export class PoliteFetcher {
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
-  async get(url: string, ttlMs: number): Promise<string> {
+  async get(url: string, ttlMs: number, options: GetOptions = {}): Promise<string> {
     const cached = await this.readCache(url);
     if (cached && this.now() - cached.fetchedAt < ttlMs) return cached.body;
 
-    const robots = await this.getRobots(new URL(url).origin);
-    if (!isAllowed(robots, new URL(url), this.opts.userAgent)) throw new RobotsDisallowedError(url);
+    if (this.opts.respectRobots ?? true) {
+      const robots = await this.getRobots(new URL(url).origin);
+      if (!isAllowed(robots, new URL(url), this.opts.userAgent)) throw new RobotsDisallowedError(url);
+    }
 
-    const res = await this.throttled(url);
-    if (!res.ok) throw new HttpError(url, res.status);
-    const body = await res.text();
+    const res = await this.throttled(url, options.headers);
+    let body: string;
+    if (res.status === 404 && options.notFoundBody !== undefined) body = options.notFoundBody;
+    else if (!res.ok) throw new HttpError(url, res.status);
+    else body = await res.text();
     await this.writeCache({ url, fetchedAt: this.now(), body });
     return body;
   }
@@ -77,13 +90,14 @@ export class PoliteFetcher {
   }
 
   /** Serialises network requests and spaces them `minIntervalMs` apart. */
-  private throttled(url: string): Promise<Response> {
+  private throttled(url: string, extraHeaders?: GetOptions["headers"]): Promise<Response> {
     const run = async () => {
+      const headers = { ...(await extraHeaders?.()), "User-Agent": this.opts.userAgent };
       const wait = this.lastRequestAt + this.opts.minIntervalMs - this.now();
       if (wait > 0) await this.sleep(wait);
       this.lastRequestAt = this.now();
       try {
-        return await this.fetchImpl(url, { headers: { "User-Agent": this.opts.userAgent } });
+        return await this.fetchImpl(url, { headers });
       } catch (e) {
         const cause = e instanceof Error && e.cause instanceof Error ? e.cause.message : String(e);
         throw new Error(`Could not reach ${url}: ${cause}`, { cause: e });

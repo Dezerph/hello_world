@@ -40,6 +40,24 @@ describe("PoliteFetcher", () => {
 
     await expect(fetcher.get("https://example.com/private/x", 60_000)).rejects.toThrow(RobotsDisallowedError);
   });
+  it("supports API use: no robots.txt, lazy auth headers, cached 404 as empty", async () => {
+    const seen: { url: string; auth?: string }[] = [];
+    const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
+      seen.push({ url: String(input), auth: (init?.headers as Record<string, string>)["Authorization"] });
+      return new Response("", { status: 404 });
+    }) as typeof fetch;
+    const net = fakeNet({});
+    const fetcher = new PoliteFetcher({
+      cacheDir: await mkdtemp(join(tmpdir(), "zed-")), userAgent: UA, minIntervalMs: 0, ...net.opts, fetchImpl, respectRobots: false,
+    });
+    let headerCalls = 0;
+    const options = { headers: async () => ({ Authorization: `Bearer ${++headerCalls}` }), notFoundBody: "[]" };
+    expect(await fetcher.get("https://api.example.com/x", 60_000, options)).toBe("[]");
+    expect(await fetcher.get("https://api.example.com/x", 60_000, options)).toBe("[]"); // cached: no request, no header call
+    expect(seen).toEqual([{ url: "https://api.example.com/x", auth: "Bearer 1" }]);
+    expect(headerCalls).toBe(1);
+  });
+
   it("does not crawl when robots.txt is refused", async () => {
     const net = fakeNet({});
     const fetchImpl = (async () => new Response("forbidden", { status: 403 })) as typeof fetch;

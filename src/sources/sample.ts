@@ -2,8 +2,8 @@ import { DateTime } from "luxon";
 import type { Flight } from "../types.js";
 
 /**
- * MADE-UP schedules for `--demo`, so the search can be tried before the
- * flightsfrom.com parser exists. Flight numbers and times are illustrative only.
+ * MADE-UP schedules for `--demo`, so the search can be tried without OpenSky
+ * access. Flight numbers and times are illustrative only.
  * Repeats every day; covers LHR → YVR plus a few return spokes out of YVR.
  */
 const DAILY: [string, string, string, string, string, string, string, number][] = [
